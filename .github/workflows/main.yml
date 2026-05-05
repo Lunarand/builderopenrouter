@@ -1,0 +1,58 @@
+name: Run AI Website Generator
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  run-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb \
+            -o cloudflared.deb
+          sudo dpkg -i cloudflared.deb
+          cloudflared --version
+
+      - name: Start server
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          node server.js &
+          echo "Server PID: $!"
+          sleep 6
+          curl -sf http://localhost:3000 > /dev/null && echo "✅ Server is up" || echo "⚠️ Server check failed"
+
+      - name: Start Cloudflare Tunnel (public URL below)
+        run: |
+          cloudflared tunnel --url http://localhost:3000 2>&1 | tee /tmp/cf.log &
+          CF_PID=$!
+          echo "Waiting for tunnel URL..."
+          for i in $(seq 1 30); do
+            URL=$(grep -o 'https://[a-z0-9\-]*\.trycloudflare\.com' /tmp/cf.log | head -1)
+            if [ -n "$URL" ]; then
+              echo ""
+              echo "============================================"
+              echo "  ✅ YOUR APP URL: $URL"
+              echo "============================================"
+              echo ""
+              break
+            fi
+            sleep 2
+          done
+          wait $CF_PID
