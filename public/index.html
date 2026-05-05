@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Website Generator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+
+    <div class="top-bar">
+      <textarea
+        id="promptInput"
+        placeholder="Describe your website (e.g. a landing page for a coffee shop with dark theme)"
+      ></textarea>
+      <input
+        type="text"
+        id="modelInput"
+        list="modelList"
+        placeholder="Model (e.g. anthropic/claude-3.5-sonnet)"
+        value="anthropic/claude-3.5-sonnet"
+      />
+      <datalist id="modelList">
+        <option value="anthropic/claude-3.5-sonnet"></option>
+        <option value="anthropic/claude-3-haiku"></option>
+        <option value="google/gemini-pro-1.5"></option>
+        <option value="mistralai/mixtral-8x7b-instruct"></option>
+        <option value="meta-llama/llama-3.1-70b-instruct"></option>
+        <option value="openai/gpt-4-turbo"></option>
+        <option value="openai/gpt-4o"></option>
+        <option value="openai/gpt-3.5-turbo"></option>
+        <option value="deepseek/deepseek-coder"></option>
+        <option value="agentica-org/deepcoder-14b-preview:free"></option>
+      </datalist>
+      <button id="generateBtn">&#9654; Generate</button>
+    </div>
+
+    <div class="main-content">
+
+      <div class="sidebar">
+        <div class="sidebar-header">&#128193; Files</div>
+        <div id="fileList">
+          <div class="empty-msg">No files yet</div>
+        </div>
+      </div>
+
+      <div class="code-viewer">
+        <div class="viewer-header" id="currentFileName">Select a file</div>
+        <pre id="codeDisplay"><code id="codeContent">// Code will appear here after generation</code></pre>
+      </div>
+
+      <div class="preview-pane">
+        <div class="preview-header">
+          &#128065; Live Preview
+          <button id="refreshPreviewBtn" title="Refresh preview">&#8635;</button>
+        </div>
+        <iframe
+          id="previewFrame"
+          sandbox="allow-scripts allow-same-origin"
+          title="Live Preview"
+        ></iframe>
+      </div>
+
+    </div>
+
+    <div id="statusBar"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
