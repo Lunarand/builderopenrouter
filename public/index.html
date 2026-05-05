@@ -2,69 +2,215 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Website Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>WebForge AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="container">
 
-    <div class="top-bar">
-      <textarea
-        id="promptInput"
-        placeholder="Describe your website (e.g. a landing page for a coffee shop with dark theme)"
-      ></textarea>
-      <input
-        type="text"
-        id="modelInput"
-        list="modelList"
-        placeholder="Model (e.g. anthropic/claude-3.5-sonnet)"
-        value="anthropic/claude-3.5-sonnet"
-      />
-      <datalist id="modelList">
-        <option value="anthropic/claude-3.5-sonnet"></option>
-        <option value="anthropic/claude-3-haiku"></option>
-        <option value="google/gemini-pro-1.5"></option>
-        <option value="mistralai/mixtral-8x7b-instruct"></option>
-        <option value="meta-llama/llama-3.1-70b-instruct"></option>
-        <option value="openai/gpt-4-turbo"></option>
-        <option value="openai/gpt-4o"></option>
-        <option value="openai/gpt-3.5-turbo"></option>
-        <option value="deepseek/deepseek-coder"></option>
-        <option value="agentica-org/deepcoder-14b-preview:free"></option>
-      </datalist>
-      <button id="generateBtn">&#9654; Generate</button>
+  <!-- ═══ TOPBAR ═══════════════════════════════════════════════════════════ -->
+  <header class="topbar" id="topbar">
+
+    <div class="topbar-brand">
+      <svg class="brand-logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="12,2 22,19 2,19" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>
+        <polygon points="12,7 18,17 6,17" fill="currentColor" opacity="0.4"/>
+      </svg>
+      <span class="brand-text">WebForge <em>AI</em></span>
     </div>
 
-    <div class="main-content">
+    <div class="topbar-prompt">
+      <textarea
+        id="promptInput"
+        placeholder="Describe your website… (e.g. a dark SaaS landing page for a project management tool with animated hero)"
+        rows="2"
+        spellcheck="false"
+      ></textarea>
+    </div>
 
-      <div class="sidebar">
-        <div class="sidebar-header">&#128193; Files</div>
-        <div id="fileList">
-          <div class="empty-msg">No files yet</div>
+    <div class="topbar-right">
+
+      <!-- Model selector -->
+      <div class="model-selector" id="modelSelector">
+        <button class="model-trigger" id="modelTrigger" type="button" aria-expanded="false" aria-haspopup="listbox">
+          <svg class="model-trigger-icon" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M5 8h6M8 5v6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          <span class="model-trigger-label" id="modelDisplay">anthropic/claude-3.5-sonnet</span>
+          <svg class="model-trigger-chevron" id="modelChevron" viewBox="0 0 10 6" fill="none">
+            <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+
+        <!-- Hidden input carries the real value -->
+        <input type="hidden" id="modelInput" value="anthropic/claude-3.5-sonnet" />
+
+        <div class="model-dropdown" id="modelDropdown" role="listbox">
+          <div class="model-search-row">
+            <svg class="model-search-icon" viewBox="0 0 16 16" fill="none">
+              <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <input
+              type="text"
+              id="modelSearch"
+              placeholder="Search models…"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Filter model list"
+            />
+          </div>
+          <div class="model-list-wrap">
+            <div class="model-list" id="modelList" role="listbox">
+              <div class="model-loading">
+                <span class="spinner-xs"></span> Loading models…
+              </div>
+            </div>
+          </div>
+          <div class="model-footer">
+            <span id="modelCount">—</span>
+            <span class="model-footer-hint">or type any model ID</span>
+          </div>
+          <!-- Manual entry row -->
+          <div class="model-manual-row">
+            <input
+              type="text"
+              id="modelManualInput"
+              placeholder="Type any model ID and press Enter…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+        </div>
+      </div><!-- /model-selector -->
+
+      <button class="generate-btn" id="generateBtn" type="button">
+        <svg viewBox="0 0 16 16" fill="none" class="generate-icon">
+          <path d="M5 3l8 5-8 5V3z" fill="currentColor"/>
+        </svg>
+        <span class="generate-label">Generate</span>
+      </button>
+
+    </div><!-- /topbar-right -->
+  </header>
+
+  <!-- ═══ MOBILE TABS ═══════════════════════════════════════════════════════ -->
+  <nav class="mobile-tabs" id="mobileTabs" role="tablist">
+    <button class="mob-tab active" data-panel="panel-sidebar" role="tab" aria-selected="true">
+      <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="5" height="12" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>
+      Files
+    </button>
+    <button class="mob-tab" data-panel="panel-code" role="tab" aria-selected="false">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M5 6L2 8l3 2M11 6l3 2-3 2M9 4l-2 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Code
+    </button>
+    <button class="mob-tab" data-panel="panel-preview" role="tab" aria-selected="false">
+      <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M6 7.5l3 2.5V5L6 7.5z" fill="currentColor"/></svg>
+      Preview
+    </button>
+  </nav>
+
+  <!-- ═══ WORKSPACE ══════════════════════════════════════════════════════════ -->
+  <main class="workspace" id="workspace">
+
+    <!-- Sidebar -->
+    <aside class="panel panel-sidebar" id="panel-sidebar" role="region" aria-label="File Explorer">
+      <div class="panel-header">
+        <svg class="panel-header-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h4l2 2h6v8H2V4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Explorer
+      </div>
+      <div class="file-tree" id="fileTree">
+        <div class="empty-state" id="sidebarEmpty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="8" y="12" width="32" height="28" rx="3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+              <path d="M16 8h10l4 4H16V8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <circle cx="24" cy="28" r="5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M24 23v-4M24 33v4M19 28h-4M33 28h-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <p class="empty-title">No files generated</p>
+          <p class="empty-sub">Enter a prompt and click Generate</p>
         </div>
       </div>
+    </aside>
 
-      <div class="code-viewer">
-        <div class="viewer-header" id="currentFileName">Select a file</div>
-        <pre id="codeDisplay"><code id="codeContent">// Code will appear here after generation</code></pre>
+    <!-- Code viewer -->
+    <section class="panel panel-code" id="panel-code" role="region" aria-label="Code Viewer">
+      <div class="panel-header code-panel-header">
+        <div class="file-tabs-row" id="fileTabsRow">
+          <span class="no-file-open">No file open</span>
+        </div>
+        <div class="code-actions">
+          <button class="icon-btn" id="copyCodeBtn" title="Copy code to clipboard" aria-label="Copy code">
+            <svg viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M2 11V3a1 1 0 0 1 1-1h8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
       </div>
+      <div class="code-body">
+        <pre class="code-pre" id="codePre" aria-live="polite"><code id="codeContent" class="is-empty">// Select a file from the explorer to view its code here</code></pre>
+      </div>
+    </section>
 
-      <div class="preview-pane">
-        <div class="preview-header">
-          &#128065; Live Preview
-          <button id="refreshPreviewBtn" title="Refresh preview">&#8635;</button>
+    <!-- Preview pane -->
+    <section class="panel panel-preview" id="panel-preview" role="region" aria-label="Live Preview">
+      <div class="panel-header">
+        <svg class="panel-header-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="4" cy="6" r="0.8" fill="currentColor"/><circle cx="7" cy="6" r="0.8" fill="currentColor"/></svg>
+        Preview
+        <div class="preview-actions">
+          <button class="icon-btn" id="refreshBtn" title="Refresh preview" aria-label="Refresh preview">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M13 8A5 5 0 1 1 8 3M8 3l3 3M8 3l3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="icon-btn" id="newTabBtn" title="Open in new tab" aria-label="Open in new tab">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M10 2h4v4M14 2l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="preview-body">
+        <div class="preview-placeholder" id="previewPlaceholder">
+          <div class="empty-icon">
+            <svg viewBox="0 0 48 48" fill="none">
+              <rect x="4" y="8" width="40" height="32" rx="3" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 3"/>
+              <path d="M4 16h40" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="9" cy="12" r="1.5" fill="currentColor" opacity="0.5"/>
+              <circle cx="14" cy="12" r="1.5" fill="currentColor" opacity="0.5"/>
+              <circle cx="19" cy="12" r="1.5" fill="currentColor" opacity="0.5"/>
+              <rect x="12" y="22" width="24" height="3" rx="1.5" fill="currentColor" opacity="0.15"/>
+              <rect x="16" y="29" width="16" height="3" rx="1.5" fill="currentColor" opacity="0.1"/>
+            </svg>
+          </div>
+          <p class="empty-title">Preview will appear here</p>
+          <p class="empty-sub">Generate a website to see the live result</p>
         </div>
         <iframe
           id="previewFrame"
-          sandbox="allow-scripts allow-same-origin"
-          title="Live Preview"
+          sandbox="allow-scripts allow-same-origin allow-forms"
+          title="Live preview"
         ></iframe>
       </div>
+    </section>
 
+  </main><!-- /workspace -->
+
+  <!-- ═══ STATUS BAR ════════════════════════════════════════════════════════ -->
+  <footer class="status-bar" id="statusBar" role="status" aria-live="polite">
+    <span class="status-indicator" id="statusIndicator"></span>
+    <span class="status-text" id="statusText">Ready</span>
+    <span class="status-model" id="statusModel"></span>
+    <span class="status-shortcut">Ctrl+Enter to generate</span>
+  </footer>
+
+  <!-- ═══ GENERATING OVERLAY ════════════════════════════════════════════════ -->
+  <div class="gen-overlay hidden" id="genOverlay" role="dialog" aria-modal="true" aria-label="Generating website">
+    <div class="gen-card">
+      <div class="gen-spinner" aria-hidden="true"></div>
+      <p class="gen-title">Generating your website…</p>
+      <p class="gen-sub">The AI is writing code. This takes 15–45 seconds.</p>
     </div>
-
-    <div id="statusBar"></div>
   </div>
 
   <script src="app.js"></script>
