@@ -232,41 +232,87 @@ async function generate() {
   setGenerating(true);
   setStatus('Calling OpenRouter — please wait…', 'busy');
 
+  let data;
+
   try {
-    const res = await fetch('/generate', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ prompt, model }),
-    });
+    let res;
+    try {
+      res = await fetch('/generate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt, model }),
+      });
+    } catch (networkErr) {
+      // Network-level failure (server down, no connection, etc.)
+      throw new Error('Network error — could not reach the server. Is it running? ' + networkErr.message);
+    }
 
-    let data;
-    try { data = await res.json(); }
-    catch (_) { throw new Error('Server returned non-JSON. Check GitHub Actions logs.'); }
+    // Parse JSON — never silently swallow a non-JSON body
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      throw new Error(`Server returned non-JSON (HTTP ${res.status}). Check server logs.`);
+    }
 
-    if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
-    if (!data.files) throw new Error('Server returned no files');
+    // HTTP error (4xx / 5xx) — surface the error field from body
+    if (!res.ok) {
+      const msg = (data && data.error) ? data.error : `Server error ${res.status}`;
+      throw new Error(msg);
+    }
 
+    // Body parsed OK but contains a server-side error field
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Validate that files exists and is a non-empty object
+    if (!data.files || typeof data.files !== 'object' || Array.isArray(data.files)) {
+      throw new Error('Server response is missing the "files" object — no output was produced.');
+    }
+
+    const fileKeys = Object.keys(data.files);
+    if (fileKeys.length === 0) {
+      throw new Error('Server returned an empty "files" object — no output was produced.');
+    }
+
+    // Validate index.html actually contains HTML
+    const indexHtml = data.files['index.html'];
+    if (!indexHtml || typeof indexHtml !== 'string' || indexHtml.trim().length < 20) {
+      throw new Error('index.html is missing or blank in the server response.');
+    }
+
+    // All good — apply results
     state.files = data.files;
     renderFileTree();
     buildPreview();
 
-    const fileCount = Object.keys(data.files).length;
-    setStatus(`Generated ${fileCount} file${fileCount !== 1 ? 's' : ''} successfully`, 'ok', 8000);
+    const fileCount = fileKeys.length;
+    const warningNote = data.warning ? ' ⚠ ' + data.warning : '';
+    const statusMsg = `Generated ${fileCount} file${fileCount !== 1 ? 's' : ''} successfully${warningNote}`;
+    setStatus(statusMsg, data.warning ? 'info' : 'ok', data.warning ? 12000 : 8000);
     statusModel.textContent = model;
 
     if (isMobile()) activateMobilePanel('panel-preview');
 
   } catch (err) {
     console.error('[generate]', err);
-    setStatus('Error: ' + err.message, 'err', 10000);
+    // Always show error in UI — never silently fail
+    // Use duration=0 so the error stays visible until next action
+    setStatus('Error: ' + err.message, 'err', 0);
   } finally {
+    // ALWAYS close the overlay and re-enable the button, no matter what happened
     setGenerating(false);
   }
 }
 
 function setGenerating(active) {
   generateBtn.disabled = active;
-  genOverlay.classList.toggle('hidden', !active);
+  // Always force-remove hidden class when stopping, in case it was somehow already removed
+  if (active) {
+    genOverlay.classList.remove('hidden');
+  } else {
+    genOverlay.classList.add('hidden');
+  }
 
   if (active) {
     generateBtn.innerHTML = `
@@ -489,13 +535,15 @@ let _statusTimer = null;
 function setStatus(msg, type = '', duration = 0) {
   statusText.textContent = msg;
   statusBar.className = 'status-bar' + (type ? ` s-${type}` : '');
-  if (_statusTimer) clearTimeout(_statusTimer);
+  if (_statusTimer) { clearTimeout(_statusTimer); _statusTimer = null; }
   if (duration > 0) {
     _statusTimer = setTimeout(() => {
       statusText.textContent = 'Ready';
       statusBar.className = 'status-bar';
+      _statusTimer = null;
     }, duration);
   }
+  // duration === 0 means sticky — do NOT auto-reset (covers errors)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
