@@ -1,169 +1,196 @@
 'use strict';
 
 const express = require('express');
-const fetch = require('node-fetch');
-const path = require('path');
+const fetch   = require('node-fetch');
+const path    = require('path');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const SYSTEM_PROMPT = `You are a website code generator. You must respond ONLY with valid JSON. No markdown, no explanations, no prose, no code fences.
+/* ── Prompt ─────────────────────────────────────────────────────────────── */
 
-Output format EXACTLY like this:
-{"files":{"index.html":"<!DOCTYPE html>...","style.css":"body { ... }","script.js":"console.log('hello');"}}
+const SYSTEM_PROMPT = `You are an expert front-end developer and designer. Your job is to generate complete, beautiful, modern websites.
 
-Rules:
-- index.html must be a complete valid HTML document
-- style.css must be complete CSS
-- script.js must be working JavaScript
-- All string values must have special characters properly escaped for JSON
-- Respond with ONLY the JSON object. Nothing before it. Nothing after it.`;
+You MUST respond with ONLY a valid JSON object — no markdown fences, no explanation, no preamble, no prose.
+
+Exact format:
+{"files":{"index.html":"<!DOCTYPE html>...","style.css":"/* css */","script.js":"// js"}}
+
+STRICT RULES:
+1. index.html must be a complete, valid HTML5 document starting with <!DOCTYPE html>
+2. style.css must be a full, modern CSS file — include variables, flexbox/grid, hover effects, transitions, media queries, good typography and color palette. Minimum 100 lines. DO NOT output weak or unstyled CSS.
+3. script.js must be working JavaScript (empty string only if truly unnecessary)
+4. ALL JSON string values must have special characters properly JSON-escaped (newlines as \\n, quotes as \\", backslashes as \\\\)
+5. Generate a VISUALLY IMPRESSIVE, PRODUCTION-READY website — not a basic unstyled page
+6. Use Google Fonts via @import or <link>, beautiful color palettes, smooth animations, responsive design
+7. Output ONLY the JSON object. Nothing before or after it.`;
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 function stripFences(text) {
-  return text
-    .trim()
-    .replace(/^```[a-z]*\n?/i, '')
-    .replace(/\n?```$/i, '')
+  return text.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
     .trim();
 }
 
-function extractJSON(text) {
-  const stripped = stripFences(text);
-  // Try direct parse first
-  try {
-    return JSON.parse(stripped);
-  } catch (_) {}
-  // Try to find JSON object within the text
-  const start = stripped.indexOf('{');
-  const end = stripped.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try {
-      return JSON.parse(stripped.slice(start, end + 1));
-    } catch (_) {}
+function extractJSON(raw) {
+  const t = stripFences(raw);
+  try { return JSON.parse(t); } catch (_) {}
+  const s = t.indexOf('{');
+  const e = t.lastIndexOf('}');
+  if (s !== -1 && e > s) {
+    try { return JSON.parse(t.slice(s, e + 1)); } catch (_) {}
   }
   return null;
 }
 
-async function callOpenRouter(apiKey, model, messages) {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+async function callOpenRouter(apiKey, model, messages, extraOptions = {}) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://github.com',
-      'X-Title': 'AI Website Generator'
+      'HTTP-Referer': 'https://github.com/webforge-ai',
+      'X-Title': 'WebForge AI'
     },
     body: JSON.stringify({
-      model: model,
-      messages: messages,
+      model,
+      messages,
       temperature: 0.2,
-      max_tokens: 4000
+      max_tokens: 4000,
+      ...extraOptions
     })
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter API error ${response.status}: ${errorText}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${body.slice(0, 400)}`);
   }
 
-  const data = await response.json();
+  const data = await res.json();
   const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('No content returned from API');
-  }
+  if (!content) throw new Error('Model returned empty content');
   return content;
 }
+
+/* ── GET /models ─────────────────────────────────────────────────────────── */
+
+app.get('/models', async (req, res) => {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'OPENROUTER_API_KEY not set', models: [] });
+  }
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`OpenRouter models API ${response.status}`);
+    }
+    const data = await response.json();
+    const models = (data.data || [])
+      .map(m => m.id)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    return res.json({ models });
+  } catch (err) {
+    console.error('[/models]', err.message);
+    return res.status(500).json({ error: err.message, models: [] });
+  }
+});
+
+/* ── POST /generate ──────────────────────────────────────────────────────── */
 
 app.post('/generate', async (req, res) => {
   const { prompt, model } = req.body;
 
-  if (!prompt || !prompt.trim()) {
-    return res.status(400).json({ error: 'Prompt is required' });
-  }
-  if (!model || !model.trim()) {
-    return res.status(400).json({ error: 'Model is required' });
-  }
+  if (!prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' });
+  if (!model?.trim())  return res.status(400).json({ error: 'Model is required' });
 
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'OPENROUTER_API_KEY not configured on server' });
-  }
-
-  const userPrompt = `Create a website: ${prompt.trim()}\n\nRespond ONLY with the JSON object. No markdown. No explanation.`;
+  if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY not set on server' });
 
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: userPrompt }
+    {
+      role: 'user',
+      content: `Create a website: ${prompt.trim()}\n\nOutput ONLY the JSON object. No explanation. No markdown.`
+    }
   ];
 
   try {
-    // First attempt
-    let content;
+    /* Attempt 1 */
+    let raw;
     try {
-      content = await callOpenRouter(apiKey, model, messages);
-    } catch (apiErr) {
-      console.error('API call failed:', apiErr.message);
-      return res.status(502).json({ error: apiErr.message });
+      raw = await callOpenRouter(apiKey, model.trim(), messages);
+    } catch (err) {
+      console.error('[/generate] API call failed:', err.message);
+      return res.status(502).json({ error: err.message });
     }
 
-    let parsed = extractJSON(content);
+    let parsed = extractJSON(raw);
 
-    // Retry once if first parse failed
+    /* Attempt 2 — retry with stricter nudge */
     if (!parsed) {
-      console.warn('First response was not valid JSON, retrying...');
+      console.warn('[/generate] Attempt 1 invalid JSON — retrying');
       const retryMessages = [
         ...messages,
-        { role: 'assistant', content: content },
+        { role: 'assistant', content: raw },
         {
           role: 'user',
-          content: 'Your response was not valid JSON. Respond ONLY with the raw JSON object — no markdown fences, no explanation, nothing else.'
+          content: 'That was not valid JSON. Respond with ONLY the raw JSON object. No markdown, no explanation, nothing else whatsoever.'
         }
       ];
-
-      let retryContent;
       try {
-        retryContent = await callOpenRouter(apiKey, model, retryMessages);
-      } catch (retryErr) {
-        console.error('Retry API call failed:', retryErr.message);
-        return res.status(502).json({ error: 'Retry failed: ' + retryErr.message });
-      }
-
-      parsed = extractJSON(retryContent);
-
-      if (!parsed) {
-        return res.status(500).json({
-          error: 'Model returned invalid JSON twice. Try a different model or simpler prompt.',
-          raw: retryContent.substring(0, 500)
-        });
+        const raw2 = await callOpenRouter(apiKey, model.trim(), retryMessages);
+        parsed = extractJSON(raw2);
+        if (!parsed) {
+          return res.status(500).json({
+            error: 'Model returned invalid JSON after 2 attempts. Try a smarter model (claude-3.5-sonnet, gpt-4o, gemini-pro-1.5).',
+            rawSnippet: raw2.slice(0, 300)
+          });
+        }
+      } catch (err) {
+        return res.status(502).json({ error: 'Retry failed: ' + err.message });
       }
     }
 
     if (!parsed.files || typeof parsed.files !== 'object') {
-      return res.status(500).json({
-        error: 'Response JSON missing "files" object.',
-        received: JSON.stringify(parsed).substring(0, 300)
-      });
+      return res.status(500).json({ error: 'Response JSON is missing the "files" object.' });
     }
 
-    // Ensure at least index.html exists
+    /* Ensure index.html always exists */
     if (!parsed.files['index.html']) {
-      parsed.files['index.html'] = '<html><body><h1>Generated Site</h1></body></html>';
+      parsed.files['index.html'] = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Generated</title></head><body><h1>Generated</h1></body></html>';
+    }
+
+    /* Ensure style.css always exists */
+    if (!parsed.files['style.css']) {
+      parsed.files['style.css'] = '';
+    }
+
+    /* Ensure script.js always exists */
+    if (!parsed.files['script.js']) {
+      parsed.files['script.js'] = '';
     }
 
     return res.json({ files: parsed.files });
 
-  } catch (error) {
-    console.error('Unexpected server error:', error);
-    return res.status(500).json({
-      error: 'Internal server error',
-      details: error.message
-    });
+  } catch (err) {
+    console.error('[/generate] Unexpected:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
+/* ── Start ───────────────────────────────────────────────────────────────── */
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`\n  ✅ WebForge AI running → http://localhost:${PORT}\n`);
 });
